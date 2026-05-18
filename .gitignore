@@ -1,0 +1,8 @@
+/bot
+/bot.db
+/bot.db-*
+/cache/
+/.env
+*.test
+.DS_Store
+coverage.out
