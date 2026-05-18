@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
+	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite"
 
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/audio"
@@ -42,6 +43,8 @@ func envInt(k string, def int) int {
 }
 
 func main() {
+	_ = godotenv.Load()
+
 	level := slog.LevelInfo
 	switch envStr("LOG_LEVEL", "info") {
 	case "debug":
