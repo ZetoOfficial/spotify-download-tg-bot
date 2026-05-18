@@ -111,11 +111,12 @@ func run(logger *slog.Logger) error {
 
 	q := queue.New(envInt("QUEUE_SIZE", 64), envInt("WORKERS", 2), func(ctx context.Context, j queue.Job) {
 		p.Process(ctx, pipeline.Job{
-			ChatID:         j.ChatID,
-			UserID:         j.UserID,
-			SpotifyURL:     j.SpotifyURL,
-			SpotifyID:      j.SpotifyID,
-			ReplyMessageID: j.ReplyMessageID,
+			ChatID:            j.ChatID,
+			UserID:            j.UserID,
+			SpotifyURL:        j.SpotifyURL,
+			SpotifyID:         j.SpotifyID,
+			ReplyMessageID:    j.ReplyMessageID,
+			OriginalMessageID: j.OriginalMessageID,
 		})
 	})
 	q.Start()

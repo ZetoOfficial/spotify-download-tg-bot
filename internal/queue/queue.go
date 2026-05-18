@@ -7,11 +7,12 @@ import (
 
 // Job is the unit of work dispatched from the bot handler.
 type Job struct {
-	ChatID         int64
-	UserID         int64
-	SpotifyURL     string
-	SpotifyID      string
-	ReplyMessageID int
+	ChatID            int64
+	UserID            int64
+	SpotifyURL        string
+	SpotifyID         string
+	ReplyMessageID    int // bot's "⏳ качаю…" message, edited/deleted by Notifier
+	OriginalMessageID int // user's message, used for reply_to on audio + errors
 }
 
 // Handler processes a Job. It must respect ctx cancellation.

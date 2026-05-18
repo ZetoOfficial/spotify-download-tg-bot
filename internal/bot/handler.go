@@ -83,12 +83,15 @@ func Handler(d Deps) bot.HandlerFunc {
 		}
 		chatID := update.Message.Chat.ID
 		userID := update.Message.From.ID
+		originalMsgID := update.Message.ID
 		text := update.Message.Text
+		replyTo := &models.ReplyParameters{MessageID: originalMsgID}
 
 		if strings.HasPrefix(text, "/start") {
 			if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: chatID,
-				Text:   "Пришли ссылку на трек Spotify — отвечу mp3.",
+				ChatID:          chatID,
+				Text:            "Пришли ссылку на трек Spotify — отвечу mp3.",
+				ReplyParameters: replyTo,
 			}); err != nil {
 				d.Logger.Warn("send /start reply", "chat_id", chatID, "err", err)
 			}
@@ -105,8 +108,9 @@ func Handler(d Deps) bot.HandlerFunc {
 		id, err := ExtractSpotifyTrackID(text)
 		if err != nil {
 			if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: chatID,
-				Text:   "пришли ссылку на трек Spotify",
+				ChatID:          chatID,
+				Text:            "пришли ссылку на трек Spotify",
+				ReplyParameters: replyTo,
 			}); sendErr != nil {
 				d.Logger.Warn("send parse-error reply", "chat_id", chatID, "err", sendErr)
 			}
@@ -115,8 +119,9 @@ func Handler(d Deps) bot.HandlerFunc {
 
 		if !d.Queue.TryAcquireUser(userID) {
 			if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: chatID,
-				Text:   "жди, твой прошлый трек ещё качается",
+				ChatID:          chatID,
+				Text:            "жди, твой прошлый трек ещё качается",
+				ReplyParameters: replyTo,
 			}); sendErr != nil {
 				d.Logger.Warn("send busy reply", "chat_id", chatID, "err", sendErr)
 			}
@@ -124,8 +129,9 @@ func Handler(d Deps) bot.HandlerFunc {
 		}
 
 		reply, err := b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "⏳ качаю…",
+			ChatID:          chatID,
+			Text:            "⏳ качаю…",
+			ReplyParameters: replyTo,
 		})
 		var replyID int
 		if err == nil && reply != nil {
@@ -133,11 +139,12 @@ func Handler(d Deps) bot.HandlerFunc {
 		}
 
 		ok := d.Queue.Enqueue(queue.Job{
-			ChatID:         chatID,
-			UserID:         userID,
-			SpotifyURL:     text,
-			SpotifyID:      id,
-			ReplyMessageID: replyID,
+			ChatID:            chatID,
+			UserID:            userID,
+			SpotifyURL:        text,
+			SpotifyID:         id,
+			ReplyMessageID:    replyID,
+			OriginalMessageID: originalMsgID,
 		})
 		if !ok {
 			d.Queue.ReleaseUser(userID)

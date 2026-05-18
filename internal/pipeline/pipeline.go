@@ -17,11 +17,12 @@ import (
 // Job mirrors queue.Job; redefined here to avoid an import cycle with the
 // queue package (queue holds a Handler that calls into Pipeline.Process).
 type Job struct {
-	ChatID         int64
-	UserID         int64
-	SpotifyURL     string
-	SpotifyID      string
-	ReplyMessageID int
+	ChatID            int64
+	UserID            int64
+	SpotifyURL        string
+	SpotifyID         string
+	ReplyMessageID    int
+	OriginalMessageID int
 }
 
 // Notifier edits the "⏳ качаю…" reply with progress / success / error.
@@ -67,7 +68,7 @@ func (p *Pipeline) Process(ctx context.Context, j Job) {
 	}
 	if hit {
 		if entry.FileID != "" {
-			if sendErr := p.Uploader.SendCached(ctx, j.ChatID, entry.FileID); sendErr == nil {
+			if sendErr := p.Uploader.SendCached(ctx, j.ChatID, entry.FileID, j.OriginalMessageID); sendErr == nil {
 				if touchErr := p.Cache.Touch(ctx, j.SpotifyID); touchErr != nil {
 					log.Warn("cache touch failed", "err", touchErr)
 				}
@@ -76,7 +77,7 @@ func (p *Pipeline) Process(ctx context.Context, j Job) {
 			}
 		}
 		if entry.LocalPath != "" {
-			fileID, uploadErr := p.Uploader.Upload(ctx, j.ChatID, entry.LocalPath, tr)
+			fileID, uploadErr := p.Uploader.Upload(ctx, j.ChatID, entry.LocalPath, tr, j.OriginalMessageID)
 			if uploadErr == nil {
 				if saveErr := p.Cache.Save(ctx, j.SpotifyID, cache.Entry{FileID: fileID, LocalPath: entry.LocalPath}, tr.Artist, tr.Title, tr.Album, tr.DurationMs); saveErr != nil {
 					log.Warn("cache save failed", "err", saveErr)
@@ -104,7 +105,7 @@ func (p *Pipeline) Process(ctx context.Context, j Job) {
 	}
 
 	p.Notifier.Progress(j.ChatID, j.ReplyMessageID, "⏳ отправляю…")
-	fileID, err := p.Uploader.Upload(ctx, j.ChatID, mp3, tr)
+	fileID, err := p.Uploader.Upload(ctx, j.ChatID, mp3, tr, j.OriginalMessageID)
 	if err != nil {
 		log.Error("upload failed", "err", err)
 		p.Notifier.Error(j.ChatID, j.ReplyMessageID, "telegram отвалился, попробуй ещё раз")

@@ -60,19 +60,23 @@ func (f *fakeTranscoder) ToMP3(ctx context.Context, raw string, t track.Track, d
 }
 
 type fakeUploader struct {
-	fileID    string
-	uploaded  []string
-	sent      []string
-	uploadErr error
+	fileID         string
+	uploaded       []string
+	uploadedReplyTo []int
+	sent           []string
+	sentReplyTo    []int
+	uploadErr      error
 }
 
-func (f *fakeUploader) Upload(ctx context.Context, chatID int64, p string, t track.Track) (string, error) {
+func (f *fakeUploader) Upload(ctx context.Context, chatID int64, p string, t track.Track, replyToMessageID int) (string, error) {
 	f.uploaded = append(f.uploaded, p)
+	f.uploadedReplyTo = append(f.uploadedReplyTo, replyToMessageID)
 	return f.fileID, f.uploadErr
 }
 
-func (f *fakeUploader) SendCached(ctx context.Context, chatID int64, fileID string) error {
+func (f *fakeUploader) SendCached(ctx context.Context, chatID int64, fileID string, replyToMessageID int) error {
 	f.sent = append(f.sent, fileID)
+	f.sentReplyTo = append(f.sentReplyTo, replyToMessageID)
 	return nil
 }
 
@@ -127,12 +131,29 @@ func TestPipeline_FullPath_FetchTranscodeUpload(t *testing.T) {
 		&fakeResolver{tr: track.Track{SpotifyID: "x", DurationMs: 100000}},
 		c, &fakeAudio{path: "/tmp/raw.m4a"}, &fakeTranscoder{}, u, n,
 	)
-	p.Process(context.Background(), Job{ChatID: 1, SpotifyID: "x", SpotifyURL: "u"})
+	p.Process(context.Background(), Job{ChatID: 1, SpotifyID: "x", SpotifyURL: "u", OriginalMessageID: 777})
 	if len(u.uploaded) != 1 {
 		t.Errorf("uploads: %v", u.uploaded)
 	}
+	if len(u.uploadedReplyTo) != 1 || u.uploadedReplyTo[0] != 777 {
+		t.Errorf("expected reply_to=777 on upload, got %v", u.uploadedReplyTo)
+	}
 	if len(c.saved) != 1 || c.saved[0].FileID != "newfid" {
 		t.Errorf("saved: %+v", c.saved)
+	}
+}
+
+func TestPipeline_CacheHit_ForwardsReplyTo(t *testing.T) {
+	c := &fakeCache{entry: cache.Entry{FileID: "fid"}, hit: true}
+	u := &fakeUploader{}
+	n := &fakeNotifier{}
+	p := newPipeline(
+		&fakeResolver{tr: track.Track{SpotifyID: "x"}},
+		c, &fakeAudio{}, &fakeTranscoder{}, u, n,
+	)
+	p.Process(context.Background(), Job{ChatID: 1, SpotifyID: "x", OriginalMessageID: 555})
+	if len(u.sentReplyTo) != 1 || u.sentReplyTo[0] != 555 {
+		t.Errorf("expected reply_to=555 on SendCached, got %v", u.sentReplyTo)
 	}
 }
 
