@@ -1,4 +1,4 @@
-.PHONY: build test test-integration lint sqlc tidy run
+.PHONY: build test test-integration lint sqlc tidy run configure
 
 build:
 	go build -o bot ./cmd/bot
@@ -20,3 +20,6 @@ tidy:
 
 run:
 	go run ./cmd/bot
+
+configure:
+	go run ./cmd/configure
