@@ -1,0 +1,12 @@
+version: "2"
+sql:
+  - engine: sqlite
+    queries: internal/cache/queries.sql
+    schema:  internal/cache/schema.sql
+    gen:
+      go:
+        package: db
+        out: internal/cache/db
+        sql_package: database/sql
+        emit_json_tags: false
+        emit_pointers_for_null_types: false
