@@ -1,0 +1,10 @@
+.git
+.github
+bot
+bot.db
+bot.db-*
+cache/
+.env
+docs/
+*.test
+coverage.out

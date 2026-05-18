@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    image: spotify-download-tg-bot:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./cache:/app/cache
+      - ./data:/app/data
