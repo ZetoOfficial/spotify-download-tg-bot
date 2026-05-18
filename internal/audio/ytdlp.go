@@ -93,7 +93,8 @@ func (s *YtDlpSource) tryFetch(ctx context.Context, query string, t track.Track)
 	if err := json.Unmarshal(stdout, &meta); err != nil {
 		return "", fmt.Errorf("yt-dlp json: %w", err)
 	}
-	if math.Abs(float64(meta.Duration*1000-t.DurationMs)) > 5000 {
+	// 30s tolerance — YouTube uploads frequently trim/pad intros vs Spotify masters.
+	if math.Abs(float64(meta.Duration*1000-t.DurationMs)) > 30000 {
 		return "", fmt.Errorf("%w: query=%q yt_id=%s yt_duration=%ds spotify_duration=%dms",
 			ErrAudioNotFound, query, meta.ID, meta.Duration, t.DurationMs)
 	}
