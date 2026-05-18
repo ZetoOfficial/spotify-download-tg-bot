@@ -55,6 +55,7 @@ func (s *YtDlpSource) Fetch(ctx context.Context, t track.Track) (string, error) 
 		fmt.Sprintf("%s - %s", t.Artist, t.Title),
 		fmt.Sprintf("%s %s official audio", t.Artist, t.Title),
 	}
+	var lastErr error
 	for _, q := range queries {
 		p, err := s.tryFetch(ctx, q, t)
 		if err == nil {
@@ -63,8 +64,9 @@ func (s *YtDlpSource) Fetch(ctx context.Context, t track.Track) (string, error) 
 		if !errors.Is(err, ErrAudioNotFound) {
 			return "", err
 		}
+		lastErr = err
 	}
-	return "", ErrAudioNotFound
+	return "", lastErr
 }
 
 func (s *YtDlpSource) tryFetch(ctx context.Context, query string, t track.Track) (string, error) {
