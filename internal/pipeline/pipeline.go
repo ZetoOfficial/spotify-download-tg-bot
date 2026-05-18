@@ -138,10 +138,13 @@ func (p *Pipeline) handleResolverErr(j Job, err error, log *slog.Logger) {
 }
 
 func (p *Pipeline) handleAudioErr(j Job, err error, log *slog.Logger) {
-	if errors.Is(err, audio.ErrAudioNotFound) {
-		p.Notifier.Error(j.ChatID, j.ReplyMessageID, "не получилось скачать аудио")
-		return
-	}
-	log.Error("audio fetch failed", "err", err)
+	log.Warn("audio fetch failed", "err", err, "kind", audioErrKind(err))
 	p.Notifier.Error(j.ChatID, j.ReplyMessageID, "не получилось скачать аудио")
+}
+
+func audioErrKind(err error) string {
+	if errors.Is(err, audio.ErrAudioNotFound) {
+		return "not_found"
+	}
+	return "exec_error"
 }

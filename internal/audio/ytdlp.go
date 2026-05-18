@@ -92,7 +92,8 @@ func (s *YtDlpSource) tryFetch(ctx context.Context, query string, t track.Track)
 		return "", fmt.Errorf("yt-dlp json: %w", err)
 	}
 	if math.Abs(float64(meta.Duration*1000-t.DurationMs)) > 5000 {
-		return "", ErrAudioNotFound
+		return "", fmt.Errorf("%w: query=%q yt_id=%s yt_duration=%ds spotify_duration=%dms",
+			ErrAudioNotFound, query, meta.ID, meta.Duration, t.DurationMs)
 	}
 	path := filepath.Join(s.workDir, t.SpotifyID+"."+meta.Ext)
 	if !s.stat(path) {
