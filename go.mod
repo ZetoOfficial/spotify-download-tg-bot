@@ -2,7 +2,10 @@ module github.com/ZetoOfficial/spotify-download-tg-bot
 
 go 1.25.5
 
-require modernc.org/sqlite v1.50.1
+require (
+	github.com/go-telegram/bot v1.20.0
+	modernc.org/sqlite v1.50.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
