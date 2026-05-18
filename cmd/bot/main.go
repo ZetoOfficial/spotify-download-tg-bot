@@ -43,7 +43,7 @@ func envInt(k string, def int) int {
 }
 
 func main() {
-	_ = godotenv.Load()
+	_ = godotenv.Load() //nolint:errcheck // .env is optional; missing file is the normal case in Docker
 
 	level := slog.LevelInfo
 	switch envStr("LOG_LEVEL", "info") {

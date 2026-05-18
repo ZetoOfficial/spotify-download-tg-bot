@@ -60,12 +60,12 @@ func (f *fakeTranscoder) ToMP3(ctx context.Context, raw string, t track.Track, d
 }
 
 type fakeUploader struct {
-	fileID         string
-	uploaded       []string
+	fileID          string
+	uploaded        []string
 	uploadedReplyTo []int
-	sent           []string
-	sentReplyTo    []int
-	uploadErr      error
+	sent            []string
+	sentReplyTo     []int
+	uploadErr       error
 }
 
 func (f *fakeUploader) Upload(ctx context.Context, chatID int64, p string, t track.Track, replyToMessageID int) (string, error) {
