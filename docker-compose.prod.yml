@@ -1,0 +1,8 @@
+services:
+  spotify-download-tg-bot:
+    image: ghcr.io/ZetoOfficial/spotify-download-tg-bot:latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./cache:/app/cache
+      - ./data:/app/data
