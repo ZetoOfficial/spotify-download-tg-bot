@@ -59,7 +59,7 @@ func TestToMP3_ArgvAndOutputPath(t *testing.T) {
 
 func TestToMP3_CoverFetchFailDoesNotFail(t *testing.T) {
 	badSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(500)
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer badSrv.Close()
 	tc := &FFmpeg{

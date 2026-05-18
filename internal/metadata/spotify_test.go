@@ -66,7 +66,7 @@ func TestResolve_NotFound(t *testing.T) {
 		w.Write([]byte(`{"access_token":"tok","expires_in":3600,"token_type":"Bearer"}`))
 	})
 	mux.HandleFunc("/v1/tracks/nope", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(404)
+		w.WriteHeader(http.StatusNotFound)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -83,7 +83,7 @@ func TestResolve_NotFound(t *testing.T) {
 func TestResolve_AuthFail(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/token", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(401)
+		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"invalid_client"}`))
 	})
 	srv := httptest.NewServer(mux)
@@ -114,7 +114,7 @@ func TestResolve_TokenCached(t *testing.T) {
 		WithTokenURL(srv.URL+"/api/token"),
 		WithAPIBase(srv.URL+"/v1"),
 	)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if _, err := r.Resolve(context.Background(), "x"); err != nil {
 			t.Fatalf("resolve %d: %v", i, err)
 		}

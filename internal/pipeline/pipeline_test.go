@@ -30,10 +30,12 @@ type fakeCache struct {
 func (f *fakeCache) Lookup(ctx context.Context, id string) (cache.Entry, bool, error) {
 	return f.entry, f.hit, nil
 }
+
 func (f *fakeCache) Save(ctx context.Context, id string, e cache.Entry, artist, title, album string, dur int) error {
 	f.saved = append(f.saved, e)
 	return nil
 }
+
 func (f *fakeCache) Touch(ctx context.Context, id string) error {
 	f.touch++
 	return nil
@@ -68,6 +70,7 @@ func (f *fakeUploader) Upload(ctx context.Context, chatID int64, p string, t tra
 	f.uploaded = append(f.uploaded, p)
 	return f.fileID, f.uploadErr
 }
+
 func (f *fakeUploader) SendCached(ctx context.Context, chatID int64, fileID string) error {
 	f.sent = append(f.sent, fileID)
 	return nil

@@ -29,7 +29,7 @@ func NewFFmpeg(binary string) *FFmpeg {
 		http:   &http.Client{Timeout: 15 * time.Second},
 		execRun: func(ctx context.Context, args []string) ([]byte, error) {
 			var stderr bytes.Buffer
-			cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+			cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // args[0] is the configured ffmpeg binary path
 			cmd.Stderr = &stderr
 			err := cmd.Run()
 			return stderr.Bytes(), err
@@ -63,13 +63,13 @@ func (f *FFmpeg) ToMP3(ctx context.Context, raw string, t track.Track, outDir st
 		out,
 	)
 	if stderr, err := f.execRun(ctx, args); err != nil {
-		return "", fmt.Errorf("%w: %v (stderr: %s)", ErrTranscode, err, string(stderr))
+		return "", fmt.Errorf("%w: %w (stderr: %s)", ErrTranscode, err, string(stderr))
 	}
 	return out, nil
 }
 
 func (f *FFmpeg) downloadCover(ctx context.Context, t track.Track) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", t.CoverURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.CoverURL, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -78,17 +78,17 @@ func (f *FFmpeg) downloadCover(ctx context.Context, t track.Track) (string, erro
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("cover status %d", resp.StatusCode)
 	}
 	tmp, err := os.CreateTemp("", "cover-*.jpg")
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	if _, copyErr := io.Copy(tmp, resp.Body); copyErr != nil {
 		tmp.Close()
 		os.Remove(tmp.Name())
-		return "", err
+		return "", copyErr
 	}
 	tmp.Close()
 	return tmp.Name(), nil

@@ -26,7 +26,7 @@ type Resolver interface {
 }
 
 const (
-	defaultTokenURL = "https://accounts.spotify.com/api/token"
+	defaultTokenURL = "https://accounts.spotify.com/api/token" //nolint:gosec // public OAuth endpoint URL, not a credential
 	defaultAPIBase  = "https://api.spotify.com/v1"
 )
 
@@ -67,7 +67,7 @@ func (r *SpotifyResolver) Resolve(ctx context.Context, spotifyID string) (track.
 	if err != nil {
 		return track.Track{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", r.apiBase+"/tracks/"+spotifyID, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.apiBase+"/tracks/"+spotifyID, http.NoBody)
 	if err != nil {
 		return track.Track{}, err
 	}
@@ -78,13 +78,16 @@ func (r *SpotifyResolver) Resolve(ctx context.Context, spotifyID string) (track.
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 200:
-	case 401, 403:
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return track.Track{}, ErrSpotifyAuth
-	case 404:
+	case http.StatusNotFound:
 		return track.Track{}, ErrSpotifyNotFound
 	default:
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return track.Track{}, fmt.Errorf("spotify status %d (body read: %w)", resp.StatusCode, readErr)
+		}
 		return track.Track{}, fmt.Errorf("spotify status %d: %s", resp.StatusCode, string(body))
 	}
 	var payload struct {
@@ -138,7 +141,7 @@ func (r *SpotifyResolver) getToken(ctx context.Context) (string, error) {
 		return r.token, nil
 	}
 	body := strings.NewReader(url.Values{"grant_type": {"client_credentials"}}.Encode())
-	req, err := http.NewRequestWithContext(ctx, "POST", r.tokenURL, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.tokenURL, body)
 	if err != nil {
 		return "", err
 	}
@@ -149,11 +152,14 @@ func (r *SpotifyResolver) getToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("token request: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 401 || resp.StatusCode == 400 {
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusBadRequest {
 		return "", ErrSpotifyAuth
 	}
-	if resp.StatusCode != 200 {
-		raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		raw, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("token status %d (body read: %w)", resp.StatusCode, readErr)
+		}
 		return "", fmt.Errorf("token status %d: %s", resp.StatusCode, string(raw))
 	}
 	var tr struct {

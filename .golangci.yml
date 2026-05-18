@@ -1,16 +1,189 @@
+version: "2"
+
 run:
   timeout: 5m
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+  tests: true
+
 linters:
+  default: none
   enable:
+    # Correctness
     - govet
     - errcheck
     - staticcheck
     - ineffassign
     - unused
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+    - nilerr
+    - nilnil
+    - errorlint
+    - copyloopvar
+    - durationcheck
+    - exhaustive
+    - makezero
+
+    # Style / simplicity
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+    - prealloc
+    - gocritic
+    - gocyclo
+    - gosec
+    - noctx
+    - asasalint
+    - asciicheck
+    - bidichk
+    - contextcheck
+    - dupword
+    - forbidigo
+    - intrange
+    - loggercheck
+    - mirror
+    - reassign
+    - usestdlibvars
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        # shadow is too noisy with the idiomatic `if err := X(); err != nil` pattern
+        - shadow
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000 # package-doc comments not required for internal/ packages
+
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+          disabled: true
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+          disabled: true
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    gocyclo:
+      min-complexity: 20
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - opinionated
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+        - paramTypeCombine
+
+    gosec:
+      excludes:
+        - G104  # handled by errcheck
+        - G115  # noisy on int conversions
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    nakedret:
+      max-func-lines: 0
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    misspell:
+      locale: US
+
+    unparam:
+      check-exported: false
+
+    forbidigo:
+      forbid:
+        - pattern: ^print(ln)?$
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: "use a structured logger instead of fmt.Print*"
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - internal/cache/db
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - gocyclo
+          - dupl
+          - funlen
+          - unparam
+      - path: cmd/
+        linters:
+          - forbidigo
+      - source: "TODO|FIXME"
+        linters:
+          - godox
+
+formatters:
+  enable:
     - gofmt
     - goimports
-    - misspell
-    - revive
+    - gofumpt
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/ZetoOfficial/spotify-download-tg-bot
+  exclusions:
+    generated: lax
+    paths:
+      - internal/cache/db
+
 issues:
-  exclude-dirs:
-    - internal/cache/db
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: true

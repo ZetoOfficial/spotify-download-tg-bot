@@ -76,7 +76,8 @@ func (c *SQLiteCache) Lookup(ctx context.Context, spotifyID string) (Entry, bool
 			e.LocalPath = p
 		} else {
 			// File gone — clear the column so future lookups don't lie.
-			_ = c.queries.ClearLocalPath(ctx, spotifyID)
+			//nolint:errcheck // best-effort cleanup; next Save/Lookup will retry
+			c.queries.ClearLocalPath(ctx, spotifyID)
 		}
 	}
 	return e, true, nil
@@ -118,9 +119,9 @@ func (c *SQLiteCache) maybeEvict(ctx context.Context) error {
 		return nil
 	}
 	for size > maxBytes {
-		cands, err := c.queries.ListLRUCandidates(ctx, 16)
-		if err != nil {
-			return fmt.Errorf("list lru: %w", err)
+		cands, listErr := c.queries.ListLRUCandidates(ctx, 16)
+		if listErr != nil {
+			return fmt.Errorf("list lru: %w", listErr)
 		}
 		if len(cands) == 0 {
 			break
@@ -129,9 +130,10 @@ func (c *SQLiteCache) maybeEvict(ctx context.Context) error {
 			if !cand.LocalPath.Valid {
 				continue
 			}
-			_ = os.Remove(cand.LocalPath.String)
-			if err := c.queries.ClearLocalPath(ctx, cand.SpotifyID); err != nil {
-				return fmt.Errorf("clear: %w", err)
+			//nolint:errcheck // best-effort delete; DB clear below is the authoritative state change
+			os.Remove(cand.LocalPath.String)
+			if clearErr := c.queries.ClearLocalPath(ctx, cand.SpotifyID); clearErr != nil {
+				return fmt.Errorf("clear: %w", clearErr)
 			}
 		}
 		size, err = dirSizeBytes(c.cacheDir)

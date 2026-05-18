@@ -21,43 +21,59 @@ type Deps struct {
 
 // Notifier implements pipeline.Notifier on top of *bot.Bot.
 type Notifier struct {
-	B *bot.Bot
+	B      *bot.Bot
+	Logger *slog.Logger
+}
+
+func (n *Notifier) log() *slog.Logger {
+	if n.Logger != nil {
+		return n.Logger
+	}
+	return slog.Default()
 }
 
 func (n *Notifier) Progress(chatID int64, msgID int, text string) {
 	if msgID == 0 {
 		return
 	}
-	_, _ = n.B.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+	if _, err := n.B.EditMessageText(context.Background(), &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: msgID,
 		Text:      text,
-	})
+	}); err != nil {
+		n.log().Warn("notifier progress", "chat_id", chatID, "msg_id", msgID, "err", err)
+	}
 }
 
 func (n *Notifier) Done(chatID int64, msgID int) {
 	if msgID == 0 {
 		return
 	}
-	_, _ = n.B.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
+	if _, err := n.B.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
 		ChatID:    chatID,
 		MessageID: msgID,
-	})
+	}); err != nil {
+		n.log().Warn("notifier done", "chat_id", chatID, "msg_id", msgID, "err", err)
+	}
 }
 
 func (n *Notifier) Error(chatID int64, msgID int, userMessage string) {
 	if msgID == 0 {
-		_, _ = n.B.SendMessage(context.Background(), &bot.SendMessageParams{
+		if _, err := n.B.SendMessage(context.Background(), &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   userMessage,
-		})
+		}); err != nil {
+			n.log().Warn("notifier error send", "chat_id", chatID, "err", err)
+		}
 		return
 	}
-	_, _ = n.B.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+	if _, err := n.B.EditMessageText(context.Background(), &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: msgID,
 		Text:      "❌ " + userMessage,
-	})
+	}); err != nil {
+		n.log().Warn("notifier error edit", "chat_id", chatID, "msg_id", msgID, "err", err)
+	}
 }
 
 func Handler(d Deps) bot.HandlerFunc {
@@ -70,10 +86,12 @@ func Handler(d Deps) bot.HandlerFunc {
 		text := update.Message.Text
 
 		if strings.HasPrefix(text, "/start") {
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
 				Text:   "Пришли ссылку на трек Spotify — отвечу mp3.",
-			})
+			}); err != nil {
+				d.Logger.Warn("send /start reply", "chat_id", chatID, "err", err)
+			}
 			return
 		}
 
@@ -86,18 +104,22 @@ func Handler(d Deps) bot.HandlerFunc {
 
 		id, err := ExtractSpotifyTrackID(text)
 		if err != nil {
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
 				Text:   "пришли ссылку на трек Spotify",
-			})
+			}); sendErr != nil {
+				d.Logger.Warn("send parse-error reply", "chat_id", chatID, "err", sendErr)
+			}
 			return
 		}
 
 		if !d.Queue.TryAcquireUser(userID) {
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
 				Text:   "жди, твой прошлый трек ещё качается",
-			})
+			}); sendErr != nil {
+				d.Logger.Warn("send busy reply", "chat_id", chatID, "err", sendErr)
+			}
 			return
 		}
 
@@ -120,11 +142,13 @@ func Handler(d Deps) bot.HandlerFunc {
 		if !ok {
 			d.Queue.ReleaseUser(userID)
 			if replyID != 0 {
-				_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				if _, editErr := b.EditMessageText(ctx, &bot.EditMessageTextParams{
 					ChatID:    chatID,
 					MessageID: replyID,
 					Text:      "очередь переполнена, попробуй позже",
-				})
+				}); editErr != nil {
+					d.Logger.Warn("send queue-full reply", "chat_id", chatID, "err", editErr)
+				}
 			}
 		}
 	}

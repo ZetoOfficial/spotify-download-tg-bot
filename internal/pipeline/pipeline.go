@@ -61,18 +61,26 @@ func (p *Pipeline) Process(ctx context.Context, j Job) {
 	}
 	log = log.With("artist", tr.Artist, "title", tr.Title)
 
-	if entry, hit, _ := p.Cache.Lookup(ctx, j.SpotifyID); hit {
+	entry, hit, lookupErr := p.Cache.Lookup(ctx, j.SpotifyID)
+	if lookupErr != nil {
+		log.Warn("cache lookup failed", "err", lookupErr)
+	}
+	if hit {
 		if entry.FileID != "" {
-			if err := p.Uploader.SendCached(ctx, j.ChatID, entry.FileID); err == nil {
-				_ = p.Cache.Touch(ctx, j.SpotifyID)
+			if sendErr := p.Uploader.SendCached(ctx, j.ChatID, entry.FileID); sendErr == nil {
+				if touchErr := p.Cache.Touch(ctx, j.SpotifyID); touchErr != nil {
+					log.Warn("cache touch failed", "err", touchErr)
+				}
 				p.Notifier.Done(j.ChatID, j.ReplyMessageID)
 				return
 			}
 		}
 		if entry.LocalPath != "" {
-			fileID, err := p.Uploader.Upload(ctx, j.ChatID, entry.LocalPath, tr)
-			if err == nil {
-				_ = p.Cache.Save(ctx, j.SpotifyID, cache.Entry{FileID: fileID, LocalPath: entry.LocalPath}, tr.Artist, tr.Title, tr.Album, tr.DurationMs)
+			fileID, uploadErr := p.Uploader.Upload(ctx, j.ChatID, entry.LocalPath, tr)
+			if uploadErr == nil {
+				if saveErr := p.Cache.Save(ctx, j.SpotifyID, cache.Entry{FileID: fileID, LocalPath: entry.LocalPath}, tr.Artist, tr.Title, tr.Album, tr.DurationMs); saveErr != nil {
+					log.Warn("cache save failed", "err", saveErr)
+				}
 				p.Notifier.Done(j.ChatID, j.ReplyMessageID)
 				return
 			}

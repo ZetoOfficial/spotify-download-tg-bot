@@ -42,7 +42,7 @@ func New(buffer, workers int, h Handler) *Queue {
 func (q *Queue) Start() {
 	q.rootCtx, q.cancel = context.WithCancel(context.Background())
 	ready := make(chan struct{}, q.workers)
-	for i := 0; i < q.workers; i++ {
+	for range q.workers {
 		q.wg.Add(1)
 		go q.workLoop(ready)
 	}
@@ -50,7 +50,7 @@ func (q *Queue) Start() {
 	// a startup race where Enqueue may run before any worker is parked on
 	// the channel, causing a small buffer to overflow despite the worker
 	// pool having idle capacity.
-	for i := 0; i < q.workers; i++ {
+	for range q.workers {
 		<-ready
 	}
 }

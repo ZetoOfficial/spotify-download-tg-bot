@@ -41,13 +41,13 @@ func NewYtDlpSource(binary, workDir string) *YtDlpSource {
 	}
 }
 
-func realExec(ctx context.Context, args []string) ([]byte, []byte, error) {
-	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
+func realExec(ctx context.Context, args []string) (stdout, stderr []byte, err error) {
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // args[0] is the configured yt-dlp binary path
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	err = cmd.Run()
+	return stdoutBuf.Bytes(), stderrBuf.Bytes(), err
 }
 
 func (s *YtDlpSource) Fetch(ctx context.Context, t track.Track) (string, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -53,16 +54,21 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
+	if err := run(logger); err != nil {
+		logger.Error("fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(logger *slog.Logger) error {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
-		logger.Error("TELEGRAM_BOT_TOKEN required")
-		os.Exit(1)
+		return errors.New("TELEGRAM_BOT_TOKEN required")
 	}
 	spotifyID := os.Getenv("SPOTIFY_CLIENT_ID")
 	spotifySecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	if spotifyID == "" || spotifySecret == "" {
-		logger.Error("SPOTIFY_CLIENT_ID/SECRET required")
-		os.Exit(1)
+		return errors.New("SPOTIFY_CLIENT_ID/SECRET required")
 	}
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -70,14 +76,12 @@ func main() {
 
 	sqlDB, err := sql.Open("sqlite", envStr("SQLITE_PATH", "./bot.db"))
 	if err != nil {
-		logger.Error("open sqlite", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("open sqlite: %w", err)
 	}
 	defer sqlDB.Close()
 	c, err := cache.NewSQLiteCache(rootCtx, sqlDB, envStr("CACHE_DIR", "./cache"), envInt("MAX_CACHE_MB", 2048))
 	if err != nil {
-		logger.Error("cache init", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("cache init: %w", err)
 	}
 
 	res := metadata.NewSpotifyResolver(spotifyID, spotifySecret)
@@ -86,10 +90,9 @@ func main() {
 
 	b, err := tgbot.New(token)
 	if err != nil {
-		logger.Error("bot init", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("bot init: %w", err)
 	}
-	notifier := &bot.Notifier{B: b}
+	notifier := &bot.Notifier{B: b, Logger: logger}
 	up := uploader.NewTelegramUploader(b)
 
 	p := &pipeline.Pipeline{
@@ -132,4 +135,5 @@ func main() {
 		logger.Error("root ctx", "err", rootCtx.Err())
 	}
 	logger.Info("bye")
+	return nil
 }

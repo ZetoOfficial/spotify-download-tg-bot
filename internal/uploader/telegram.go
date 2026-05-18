@@ -55,7 +55,7 @@ func (u *TelegramUploader) Upload(ctx context.Context, chatID int64, path string
 		}
 		lastErr = err
 		if !isTransient(err) {
-			return "", fmt.Errorf("%w: %v", ErrUpload, err)
+			return "", fmt.Errorf("%w: %w", ErrUpload, err)
 		}
 		if attempt < 3 && delay > 0 {
 			select {
@@ -66,7 +66,7 @@ func (u *TelegramUploader) Upload(ctx context.Context, chatID int64, path string
 			delay *= 4
 		}
 	}
-	return "", fmt.Errorf("%w: %v", ErrUpload, lastErr)
+	return "", fmt.Errorf("%w: %w", ErrUpload, lastErr)
 }
 
 // SendCached sends a previously uploaded audio file by its Telegram file_id.
@@ -95,7 +95,7 @@ func (u *TelegramUploader) realSend(ctx context.Context, chatID int64, path stri
 		return "", err
 	}
 	if msg.Audio == nil {
-		return "", fmt.Errorf("telegram did not return audio")
+		return "", errors.New("telegram did not return audio")
 	}
 	return msg.Audio.FileID, nil
 }

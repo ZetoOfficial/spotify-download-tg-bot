@@ -11,19 +11,19 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func newTestCache(t *testing.T) (*SQLiteCache, string) {
+func newTestCache(t *testing.T) (cache *SQLiteCache, dir string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir = t.TempDir()
 	db, err := sql.Open("sqlite", filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	c, err := NewSQLiteCache(context.Background(), db, dir, 100) // 100 MB
+	cache, err = NewSQLiteCache(context.Background(), db, dir, 100) // 100 MB
 	if err != nil {
 		t.Fatalf("new cache: %v", err)
 	}
-	return c, dir
+	return cache, dir
 }
 
 func TestLookup_Miss(t *testing.T) {

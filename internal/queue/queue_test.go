@@ -15,7 +15,7 @@ func TestEnqueue_AndProcess(t *testing.T) {
 	})
 	q.Start()
 	defer q.Stop(context.Background())
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !q.Enqueue(Job{ChatID: int64(i), SpotifyID: "id"}) {
 			t.Fatalf("enqueue %d", i)
 		}
@@ -83,11 +83,16 @@ func TestWorker_ReleasesUserOnCompletion(t *testing.T) {
 	}
 	<-done
 	// Worker should have called ReleaseUser(7) after handler returned.
+	acquired := false
 	deadline := time.Now().Add(time.Second)
-	for !q.TryAcquireUser(7) && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
+		if q.TryAcquireUser(7) {
+			acquired = true
+			break
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !q.TryAcquireUser(7) {
-		// will have already acquired in the loop above; if still failing here, test failed
+	if !acquired {
+		t.Fatal("user lock never released after job completion")
 	}
 }
