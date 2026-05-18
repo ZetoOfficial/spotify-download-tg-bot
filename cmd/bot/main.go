@@ -1,0 +1,135 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"log/slog"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+
+	tgbot "github.com/go-telegram/bot"
+	_ "modernc.org/sqlite"
+
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/audio"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/bot"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/cache"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/metadata"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/pipeline"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/queue"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/transcode"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/uploader"
+)
+
+func envStr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
+func envInt(k string, def int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func main() {
+	level := slog.LevelInfo
+	switch envStr("LOG_LEVEL", "info") {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+
+	token := os.Getenv("TELEGRAM_BOT_TOKEN")
+	if token == "" {
+		logger.Error("TELEGRAM_BOT_TOKEN required")
+		os.Exit(1)
+	}
+	spotifyID := os.Getenv("SPOTIFY_CLIENT_ID")
+	spotifySecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
+	if spotifyID == "" || spotifySecret == "" {
+		logger.Error("SPOTIFY_CLIENT_ID/SECRET required")
+		os.Exit(1)
+	}
+
+	rootCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	sqlDB, err := sql.Open("sqlite", envStr("SQLITE_PATH", "./bot.db"))
+	if err != nil {
+		logger.Error("open sqlite", "err", err)
+		os.Exit(1)
+	}
+	defer sqlDB.Close()
+	c, err := cache.NewSQLiteCache(rootCtx, sqlDB, envStr("CACHE_DIR", "./cache"), envInt("MAX_CACHE_MB", 2048))
+	if err != nil {
+		logger.Error("cache init", "err", err)
+		os.Exit(1)
+	}
+
+	res := metadata.NewSpotifyResolver(spotifyID, spotifySecret)
+	ytdlp := audio.NewYtDlpSource(envStr("YTDLP_BIN", "yt-dlp"), os.TempDir())
+	ff := transcode.NewFFmpeg(envStr("FFMPEG_BIN", "ffmpeg"))
+
+	b, err := tgbot.New(token)
+	if err != nil {
+		logger.Error("bot init", "err", err)
+		os.Exit(1)
+	}
+	notifier := &bot.Notifier{B: b}
+	up := uploader.NewTelegramUploader(b)
+
+	p := &pipeline.Pipeline{
+		Resolver:   res,
+		Cache:      c,
+		Audio:      ytdlp,
+		Transcoder: ff,
+		Uploader:   up,
+		Notifier:   notifier,
+		CacheDir:   envStr("CACHE_DIR", "./cache"),
+		Logger:     logger,
+	}
+
+	q := queue.New(envInt("QUEUE_SIZE", 64), envInt("WORKERS", 2), func(ctx context.Context, j queue.Job) {
+		p.Process(ctx, pipeline.Job{
+			ChatID:         j.ChatID,
+			UserID:         j.UserID,
+			SpotifyURL:     j.SpotifyURL,
+			SpotifyID:      j.SpotifyID,
+			ReplyMessageID: j.ReplyMessageID,
+		})
+	})
+	q.Start()
+
+	b.RegisterHandler(tgbot.HandlerTypeMessageText, "", tgbot.MatchTypeContains, bot.Handler(bot.Deps{
+		Queue:        q,
+		AllowedUsers: bot.ParseAllowedUsers(os.Getenv("ALLOWED_USER_IDS")),
+		Logger:       logger,
+	}))
+
+	logger.Info("starting bot")
+	go b.Start(rootCtx)
+
+	<-rootCtx.Done()
+	logger.Info("shutdown signal received")
+	shutdownCtx, sc := context.WithTimeout(context.Background(), 30*time.Second)
+	defer sc()
+	q.Stop(shutdownCtx)
+	if !errors.Is(rootCtx.Err(), context.Canceled) {
+		logger.Error("root ctx", "err", rootCtx.Err())
+	}
+	logger.Info("bye")
+}

@@ -1,0 +1,150 @@
+package bot
+
+import (
+	"context"
+	"log/slog"
+	"strconv"
+	"strings"
+
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/pipeline"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/queue"
+)
+
+type Deps struct {
+	Queue        *queue.Queue
+	AllowedUsers map[int64]struct{} // empty = allow all
+	Logger       *slog.Logger
+}
+
+// Notifier implements pipeline.Notifier on top of *bot.Bot.
+type Notifier struct {
+	B *bot.Bot
+}
+
+func (n *Notifier) Progress(chatID int64, msgID int, text string) {
+	if msgID == 0 {
+		return
+	}
+	_, _ = n.B.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: msgID,
+		Text:      text,
+	})
+}
+
+func (n *Notifier) Done(chatID int64, msgID int) {
+	if msgID == 0 {
+		return
+	}
+	_, _ = n.B.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: msgID,
+	})
+}
+
+func (n *Notifier) Error(chatID int64, msgID int, userMessage string) {
+	if msgID == 0 {
+		_, _ = n.B.SendMessage(context.Background(), &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   userMessage,
+		})
+		return
+	}
+	_, _ = n.B.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: msgID,
+		Text:      "❌ " + userMessage,
+	})
+}
+
+func Handler(d Deps) bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		if update.Message == nil || update.Message.Text == "" {
+			return
+		}
+		chatID := update.Message.Chat.ID
+		userID := update.Message.From.ID
+		text := update.Message.Text
+
+		if strings.HasPrefix(text, "/start") {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "Пришли ссылку на трек Spotify — отвечу mp3.",
+			})
+			return
+		}
+
+		if len(d.AllowedUsers) > 0 {
+			if _, ok := d.AllowedUsers[userID]; !ok {
+				d.Logger.Info("denied", "user_id", userID)
+				return
+			}
+		}
+
+		id, err := ExtractSpotifyTrackID(text)
+		if err != nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "пришли ссылку на трек Spotify",
+			})
+			return
+		}
+
+		if !d.Queue.TryAcquireUser(userID) {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "жди, твой прошлый трек ещё качается",
+			})
+			return
+		}
+
+		reply, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "⏳ качаю…",
+		})
+		var replyID int
+		if err == nil && reply != nil {
+			replyID = reply.ID
+		}
+
+		ok := d.Queue.Enqueue(queue.Job{
+			ChatID:         chatID,
+			UserID:         userID,
+			SpotifyURL:     text,
+			SpotifyID:      id,
+			ReplyMessageID: replyID,
+		})
+		if !ok {
+			d.Queue.ReleaseUser(userID)
+			if replyID != 0 {
+				_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+					ChatID:    chatID,
+					MessageID: replyID,
+					Text:      "очередь переполнена, попробуй позже",
+				})
+			}
+		}
+	}
+}
+
+func ParseAllowedUsers(raw string) map[int64]struct{} {
+	out := make(map[int64]struct{})
+	for _, part := range strings.Split(raw, ",") {
+		s := strings.TrimSpace(part)
+		if s == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			continue
+		}
+		out[id] = struct{}{}
+	}
+	return out
+}
+
+// Compile-time check that *Notifier satisfies pipeline.Notifier.
+var _ pipeline.Notifier = (*Notifier)(nil)
