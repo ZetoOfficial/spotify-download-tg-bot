@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	botName          = "Spotify Downloader"
-	shortDescription = "Пришли ссылку на трек в Spotify — отвечу mp3 с обложкой."
-	longDescription  = "Бот для скачивания музыки из Spotify.\n\n" +
+	botName          = "Spotify & YouTube Downloader"
+	shortDescription = "Пришли ссылку на трек в Spotify или видео YouTube (до 5 мин) — отвечу mp3."
+	longDescription  = "Бот для скачивания музыки из Spotify и YouTube.\n\n" +
 		"Как пользоваться:\n" +
-		"Скинь ссылку на трек (open.spotify.com/track/…) — я пришлю mp3 с обложкой и тегами. " +
+		"• Spotify: ссылка на трек (open.spotify.com/track/…) — пришлю mp3 с обложкой и тегами.\n" +
+		"• YouTube: ссылка на видео (youtube.com/watch?v=… или youtu.be/…) длительностью до 5 минут.\n\n" +
 		"Повторная отправка той же ссылки — мгновенно из кэша."
 )
 
