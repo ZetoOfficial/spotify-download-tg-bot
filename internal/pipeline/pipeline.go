@@ -10,6 +10,7 @@ import (
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/audio"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/cache"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/metadata"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/source"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/track"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/uploader"
 )
@@ -19,8 +20,9 @@ import (
 type Job struct {
 	ChatID            int64
 	UserID            int64
-	SpotifyURL        string
-	SpotifyID         string
+	Source            source.Source
+	SourceID          string
+	SourceURL         string
 	ReplyMessageID    int
 	OriginalMessageID int
 }
@@ -38,7 +40,7 @@ type Transcoder interface {
 }
 
 type Pipeline struct {
-	Resolver   metadata.Resolver
+	Resolvers  map[source.Source]metadata.Resolver
 	Cache      cache.Cache
 	Audio      audio.Source
 	Transcoder Transcoder
@@ -49,27 +51,39 @@ type Pipeline struct {
 }
 
 func (p *Pipeline) Process(ctx context.Context, j Job) {
-	log := p.logger().With("chat_id", j.ChatID, "spotify_id", j.SpotifyID)
+	log := p.logger().With("chat_id", j.ChatID, "source", string(j.Source), "source_id", j.SourceID)
 	start := time.Now()
 	defer func() {
 		log.Info("job complete", "duration_ms", time.Since(start).Milliseconds())
 	}()
 
-	tr, err := p.Resolver.Resolve(ctx, j.SpotifyID)
+	resolver, ok := p.Resolvers[j.Source]
+	if !ok {
+		log.Error("no resolver for source")
+		p.Notifier.Error(j.ChatID, j.ReplyMessageID, "сервис недоступен, напиши админу")
+		return
+	}
+	tr, err := resolver.Resolve(ctx, resolverKey(j))
 	if err != nil {
 		p.handleResolverErr(j, err, log)
 		return
 	}
+	// Source / SourceID / SourceURL are authoritative from the Job — overwrite
+	// whatever the resolver set, so downstream Cache.Key and file paths match.
+	tr.Source = j.Source
+	tr.SourceID = j.SourceID
+	tr.SourceURL = j.SourceURL
 	log = log.With("artist", tr.Artist, "title", tr.Title)
 
-	entry, hit, lookupErr := p.Cache.Lookup(ctx, j.SpotifyID)
+	trackKey := cache.Key(j.Source, j.SourceID)
+	entry, hit, lookupErr := p.Cache.Lookup(ctx, trackKey)
 	if lookupErr != nil {
 		log.Warn("cache lookup failed", "err", lookupErr)
 	}
 	if hit {
 		if entry.FileID != "" {
 			if sendErr := p.Uploader.SendCached(ctx, j.ChatID, entry.FileID, j.OriginalMessageID); sendErr == nil {
-				if touchErr := p.Cache.Touch(ctx, j.SpotifyID); touchErr != nil {
+				if touchErr := p.Cache.Touch(ctx, trackKey); touchErr != nil {
 					log.Warn("cache touch failed", "err", touchErr)
 				}
 				p.Notifier.Done(j.ChatID, j.ReplyMessageID)
@@ -79,7 +93,7 @@ func (p *Pipeline) Process(ctx context.Context, j Job) {
 		if entry.LocalPath != "" {
 			fileID, uploadErr := p.Uploader.Upload(ctx, j.ChatID, entry.LocalPath, tr, j.OriginalMessageID)
 			if uploadErr == nil {
-				if saveErr := p.Cache.Save(ctx, j.SpotifyID, cache.Entry{FileID: fileID, LocalPath: entry.LocalPath}, tr.Artist, tr.Title, tr.Album, tr.DurationMs); saveErr != nil {
+				if saveErr := p.Cache.Save(ctx, trackKey, cache.Entry{FileID: fileID, LocalPath: entry.LocalPath}, tr.Artist, tr.Title, tr.Album, tr.DurationMs); saveErr != nil {
 					log.Warn("cache save failed", "err", saveErr)
 				}
 				p.Notifier.Done(j.ChatID, j.ReplyMessageID)
@@ -111,10 +125,19 @@ func (p *Pipeline) Process(ctx context.Context, j Job) {
 		p.Notifier.Error(j.ChatID, j.ReplyMessageID, "telegram отвалился, попробуй ещё раз")
 		return
 	}
-	if err := p.Cache.Save(ctx, j.SpotifyID, cache.Entry{FileID: fileID, LocalPath: mp3}, tr.Artist, tr.Title, tr.Album, tr.DurationMs); err != nil {
+	if err := p.Cache.Save(ctx, trackKey, cache.Entry{FileID: fileID, LocalPath: mp3}, tr.Artist, tr.Title, tr.Album, tr.DurationMs); err != nil {
 		log.Warn("cache save failed", "err", err)
 	}
 	p.Notifier.Done(j.ChatID, j.ReplyMessageID)
+}
+
+// resolverKey returns the argument expected by the source's Resolver:
+// Spotify wants the track id, YouTube wants the canonical URL.
+func resolverKey(j Job) string {
+	if j.Source == source.YouTube {
+		return j.SourceURL
+	}
+	return j.SourceID
 }
 
 func (p *Pipeline) logger() *slog.Logger {
@@ -126,6 +149,8 @@ func (p *Pipeline) logger() *slog.Logger {
 
 func (p *Pipeline) handleResolverErr(j Job, err error, log *slog.Logger) {
 	switch {
+	case errors.Is(err, metadata.ErrTrackTooLong):
+		p.Notifier.Error(j.ChatID, j.ReplyMessageID, "максимум 5 минут")
 	case errors.Is(err, metadata.ErrSpotifyNotFound):
 		p.Notifier.Error(j.ChatID, j.ReplyMessageID, "трек не найден в Spotify")
 	case errors.Is(err, metadata.ErrSpotifyAuth):

@@ -22,6 +22,7 @@ import (
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/metadata"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/pipeline"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/queue"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/source"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/transcode"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/uploader"
 )
@@ -87,8 +88,10 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("cache init: %w", err)
 	}
 
-	res := metadata.NewSpotifyResolver(spotifyID, spotifySecret)
-	ytdlp := audio.NewYtDlpSource(envStr("YTDLP_BIN", "yt-dlp"), os.TempDir())
+	ytdlpBin := envStr("YTDLP_BIN", "yt-dlp")
+	spotifyRes := metadata.NewSpotifyResolver(spotifyID, spotifySecret)
+	youtubeRes := metadata.NewYoutubeResolver(ytdlpBin)
+	ytdlp := audio.NewYtDlpSource(ytdlpBin, os.TempDir())
 	ff := transcode.NewFFmpeg(envStr("FFMPEG_BIN", "ffmpeg"))
 
 	b, err := tgbot.New(token)
@@ -99,7 +102,10 @@ func run(logger *slog.Logger) error {
 	up := uploader.NewTelegramUploader(b)
 
 	p := &pipeline.Pipeline{
-		Resolver:   res,
+		Resolvers: map[source.Source]metadata.Resolver{
+			source.Spotify: spotifyRes,
+			source.YouTube: youtubeRes,
+		},
 		Cache:      c,
 		Audio:      ytdlp,
 		Transcoder: ff,
@@ -113,8 +119,9 @@ func run(logger *slog.Logger) error {
 		p.Process(ctx, pipeline.Job{
 			ChatID:            j.ChatID,
 			UserID:            j.UserID,
-			SpotifyURL:        j.SpotifyURL,
-			SpotifyID:         j.SpotifyID,
+			Source:            j.Source,
+			SourceID:          j.SourceID,
+			SourceURL:         j.SourceURL,
 			ReplyMessageID:    j.ReplyMessageID,
 			OriginalMessageID: j.OriginalMessageID,
 		})

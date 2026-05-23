@@ -12,17 +12,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/source"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/track"
 )
 
 var (
 	ErrSpotifyNotFound = errors.New("spotify track not found")
 	ErrSpotifyAuth     = errors.New("spotify auth failed")
+	ErrTrackTooLong    = errors.New("track exceeds duration cap")
 )
 
-// Resolver fetches Track metadata for a Spotify track ID.
+// Resolver fetches Track metadata. The key is source-dependent:
+// Spotify uses the track id, YouTube uses the canonical watch URL.
 type Resolver interface {
-	Resolve(ctx context.Context, spotifyID string) (track.Track, error)
+	Resolve(ctx context.Context, key string) (track.Track, error)
 }
 
 const (
@@ -124,7 +127,9 @@ func (r *SpotifyResolver) Resolve(ctx context.Context, spotifyID string) (track.
 		}
 	}
 	return track.Track{
-		SpotifyID:  payload.ID,
+		Source:     source.Spotify,
+		SourceID:   payload.ID,
+		SourceURL:  "https://open.spotify.com/track/" + payload.ID,
 		Artist:     strings.Join(names, ", "),
 		Title:      payload.Name,
 		Album:      payload.Album.Name,

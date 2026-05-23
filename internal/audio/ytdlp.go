@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/source"
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/track"
 )
 
@@ -51,13 +53,20 @@ func realExec(ctx context.Context, args []string) (stdout, stderr []byte, err er
 }
 
 func (s *YtDlpSource) Fetch(ctx context.Context, t track.Track) (string, error) {
+	if t.Source == source.YouTube {
+		return s.fetchByURL(ctx, t)
+	}
+	return s.fetchBySearch(ctx, t)
+}
+
+func (s *YtDlpSource) fetchBySearch(ctx context.Context, t track.Track) (string, error) {
 	queries := []string{
 		fmt.Sprintf("%s - %s", t.Artist, t.Title),
 		fmt.Sprintf("%s %s official audio", t.Artist, t.Title),
 	}
 	var lastErr error
 	for _, q := range queries {
-		p, err := s.tryFetch(ctx, q, t)
+		p, err := s.trySearch(ctx, q, t)
 		if err == nil {
 			return p, nil
 		}
@@ -69,8 +78,8 @@ func (s *YtDlpSource) Fetch(ctx context.Context, t track.Track) (string, error) 
 	return "", lastErr
 }
 
-func (s *YtDlpSource) tryFetch(ctx context.Context, query string, t track.Track) (string, error) {
-	outTpl := filepath.Join(s.workDir, t.SpotifyID+".%(ext)s")
+func (s *YtDlpSource) trySearch(ctx context.Context, query string, t track.Track) (string, error) {
+	outTpl := filepath.Join(s.workDir, t.SourceID+".%(ext)s")
 	args := []string{
 		s.binary,
 		"--no-playlist",
@@ -98,9 +107,65 @@ func (s *YtDlpSource) tryFetch(ctx context.Context, query string, t track.Track)
 		return "", fmt.Errorf("%w: query=%q yt_id=%s yt_duration=%ds spotify_duration=%dms",
 			ErrAudioNotFound, query, meta.ID, meta.Duration, t.DurationMs)
 	}
-	path := filepath.Join(s.workDir, t.SpotifyID+"."+meta.Ext)
+	path := filepath.Join(s.workDir, t.SourceID+"."+meta.Ext)
 	if !s.stat(path) {
 		return "", fmt.Errorf("yt-dlp output missing: %s", path)
 	}
 	return path, nil
+}
+
+func (s *YtDlpSource) fetchByURL(ctx context.Context, t track.Track) (string, error) {
+	outTpl := filepath.Join(s.workDir, t.SourceID+".%(ext)s")
+	args := []string{
+		s.binary,
+		"--no-playlist",
+		"-f", "bestaudio[acodec!=opus]/bestaudio",
+		"--print-json",
+		"--no-progress",
+		"-o", outTpl,
+		t.SourceURL,
+	}
+	stdout, stderr, err := s.exec(ctx, args)
+	if err != nil {
+		if isUnavailable(stderr) {
+			return "", fmt.Errorf("%w: yt-dlp stderr: %s", ErrAudioNotFound, truncate(string(stderr), 200))
+		}
+		return "", fmt.Errorf("yt-dlp: %w (stderr: %s)", err, string(stderr))
+	}
+	var meta struct {
+		ID  string `json:"id"`
+		Ext string `json:"ext"`
+	}
+	if err := json.Unmarshal(stdout, &meta); err != nil {
+		return "", fmt.Errorf("yt-dlp json: %w", err)
+	}
+	path := filepath.Join(s.workDir, t.SourceID+"."+meta.Ext)
+	if !s.stat(path) {
+		return "", fmt.Errorf("yt-dlp output missing: %s", path)
+	}
+	return path, nil
+}
+
+func isUnavailable(stderr []byte) bool {
+	s := strings.ToLower(string(stderr))
+	for _, marker := range []string{
+		"video unavailable",
+		"private video",
+		"members-only",
+		"this video is available to this channel",
+		"sign in to confirm your age",
+		"removed by the uploader",
+	} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

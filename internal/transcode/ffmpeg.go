@@ -43,7 +43,7 @@ func (f *FFmpeg) ToMP3(ctx context.Context, raw string, t track.Track, outDir st
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)
 	}
-	out := filepath.Join(outDir, t.SpotifyID+".mp3")
+	out := filepath.Join(outDir, t.SourceID+".mp3")
 
 	args := []string{f.binary, "-y", "-i", raw}
 	coverPath := ""

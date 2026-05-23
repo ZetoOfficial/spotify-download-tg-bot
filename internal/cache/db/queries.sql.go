@@ -11,25 +11,25 @@ import (
 )
 
 const clearLocalPath = `-- name: ClearLocalPath :exec
-UPDATE tracks SET local_path = NULL WHERE spotify_id = ?
+UPDATE tracks SET local_path = NULL WHERE track_key = ?
 `
 
-func (q *Queries) ClearLocalPath(ctx context.Context, spotifyID string) error {
-	_, err := q.db.ExecContext(ctx, clearLocalPath, spotifyID)
+func (q *Queries) ClearLocalPath(ctx context.Context, trackKey string) error {
+	_, err := q.db.ExecContext(ctx, clearLocalPath, trackKey)
 	return err
 }
 
 const getTrack = `-- name: GetTrack :one
-SELECT spotify_id, artist, title, album, duration_ms, file_id, local_path, created_at, last_used_at
+SELECT track_key, artist, title, album, duration_ms, file_id, local_path, created_at, last_used_at
 FROM tracks
-WHERE spotify_id = ?
+WHERE track_key = ?
 `
 
-func (q *Queries) GetTrack(ctx context.Context, spotifyID string) (Track, error) {
-	row := q.db.QueryRowContext(ctx, getTrack, spotifyID)
+func (q *Queries) GetTrack(ctx context.Context, trackKey string) (Track, error) {
+	row := q.db.QueryRowContext(ctx, getTrack, trackKey)
 	var i Track
 	err := row.Scan(
-		&i.SpotifyID,
+		&i.TrackKey,
 		&i.Artist,
 		&i.Title,
 		&i.Album,
@@ -43,7 +43,7 @@ func (q *Queries) GetTrack(ctx context.Context, spotifyID string) (Track, error)
 }
 
 const listLRUCandidates = `-- name: ListLRUCandidates :many
-SELECT spotify_id, local_path
+SELECT track_key, local_path
 FROM tracks
 WHERE local_path IS NOT NULL
 ORDER BY last_used_at ASC
@@ -51,7 +51,7 @@ LIMIT ?
 `
 
 type ListLRUCandidatesRow struct {
-	SpotifyID string
+	TrackKey  string
 	LocalPath sql.NullString
 }
 
@@ -64,7 +64,7 @@ func (q *Queries) ListLRUCandidates(ctx context.Context, limit int64) ([]ListLRU
 	var items []ListLRUCandidatesRow
 	for rows.Next() {
 		var i ListLRUCandidatesRow
-		if err := rows.Scan(&i.SpotifyID, &i.LocalPath); err != nil {
+		if err := rows.Scan(&i.TrackKey, &i.LocalPath); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -79,24 +79,24 @@ func (q *Queries) ListLRUCandidates(ctx context.Context, limit int64) ([]ListLRU
 }
 
 const touchLastUsed = `-- name: TouchLastUsed :exec
-UPDATE tracks SET last_used_at = ? WHERE spotify_id = ?
+UPDATE tracks SET last_used_at = ? WHERE track_key = ?
 `
 
 type TouchLastUsedParams struct {
 	LastUsedAt int64
-	SpotifyID  string
+	TrackKey   string
 }
 
 func (q *Queries) TouchLastUsed(ctx context.Context, arg TouchLastUsedParams) error {
-	_, err := q.db.ExecContext(ctx, touchLastUsed, arg.LastUsedAt, arg.SpotifyID)
+	_, err := q.db.ExecContext(ctx, touchLastUsed, arg.LastUsedAt, arg.TrackKey)
 	return err
 }
 
 const upsertTrack = `-- name: UpsertTrack :exec
 INSERT INTO tracks (
-  spotify_id, artist, title, album, duration_ms, file_id, local_path, created_at, last_used_at
+  track_key, artist, title, album, duration_ms, file_id, local_path, created_at, last_used_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(spotify_id) DO UPDATE SET
+ON CONFLICT(track_key) DO UPDATE SET
   artist       = excluded.artist,
   title        = excluded.title,
   album        = excluded.album,
@@ -107,7 +107,7 @@ ON CONFLICT(spotify_id) DO UPDATE SET
 `
 
 type UpsertTrackParams struct {
-	SpotifyID  string
+	TrackKey   string
 	Artist     string
 	Title      string
 	Album      string
@@ -120,7 +120,7 @@ type UpsertTrackParams struct {
 
 func (q *Queries) UpsertTrack(ctx context.Context, arg UpsertTrackParams) error {
 	_, err := q.db.ExecContext(ctx, upsertTrack,
-		arg.SpotifyID,
+		arg.TrackKey,
 		arg.Artist,
 		arg.Title,
 		arg.Album,

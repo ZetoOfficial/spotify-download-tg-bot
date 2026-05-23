@@ -30,11 +30,11 @@ func TestToMP3_ArgvAndOutputPath(t *testing.T) {
 	dir := t.TempDir()
 	raw := filepath.Join(dir, "in.m4a")
 	tr := track.Track{
-		SpotifyID: "abc",
-		Artist:    "A",
-		Title:     "T",
-		Album:     "Al",
-		CoverURL:  imgSrv.URL + "/cover.jpg",
+		SourceID: "abc",
+		Artist:   "A",
+		Title:    "T",
+		Album:    "Al",
+		CoverURL: imgSrv.URL + "/cover.jpg",
 	}
 	out, err := tc.ToMP3(context.Background(), raw, tr, dir)
 	if err != nil {
@@ -68,7 +68,7 @@ func TestToMP3_CoverFetchFailDoesNotFail(t *testing.T) {
 		execRun: func(ctx context.Context, args []string) ([]byte, error) { return nil, nil },
 	}
 	dir := t.TempDir()
-	tr := track.Track{SpotifyID: "abc", CoverURL: badSrv.URL + "/x.jpg"}
+	tr := track.Track{SourceID: "abc", CoverURL: badSrv.URL + "/x.jpg"}
 	if _, err := tc.ToMP3(context.Background(), filepath.Join(dir, "in.m4a"), tr, dir); err != nil {
 		t.Fatalf("expected ok, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestToMP3_ExecFails(t *testing.T) {
 		execRun: func(ctx context.Context, args []string) ([]byte, error) { return []byte("bad"), errors.New("boom") },
 	}
 	dir := t.TempDir()
-	_, err := tc.ToMP3(context.Background(), filepath.Join(dir, "in.m4a"), track.Track{SpotifyID: "x"}, dir)
+	_, err := tc.ToMP3(context.Background(), filepath.Join(dir, "in.m4a"), track.Track{SourceID: "x"}, dir)
 	if !errors.Is(err, ErrTranscode) {
 		t.Fatalf("err %v, want ErrTranscode", err)
 	}

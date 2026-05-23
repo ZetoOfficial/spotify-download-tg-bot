@@ -16,7 +16,7 @@ func TestEnqueue_AndProcess(t *testing.T) {
 	q.Start()
 	defer q.Stop(context.Background())
 	for i := range 5 {
-		if !q.Enqueue(Job{ChatID: int64(i), SpotifyID: "id"}) {
+		if !q.Enqueue(Job{ChatID: int64(i), SourceID: "id"}) {
 			t.Fatalf("enqueue %d", i)
 		}
 	}

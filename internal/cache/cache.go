@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/cache/db"
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/source"
 )
 
 //go:embed schema.sql
@@ -26,9 +27,19 @@ type Entry struct {
 
 // Cache is the persistent track cache.
 type Cache interface {
-	Lookup(ctx context.Context, spotifyID string) (Entry, bool, error)
-	Save(ctx context.Context, spotifyID string, e Entry, artist, title, album string, durationMs int) error
-	Touch(ctx context.Context, spotifyID string) error
+	Lookup(ctx context.Context, trackKey string) (Entry, bool, error)
+	Save(ctx context.Context, trackKey string, e Entry, artist, title, album string, durationMs int) error
+	Touch(ctx context.Context, trackKey string) error
+}
+
+// Key builds the composite cache key used as the tracks PRIMARY KEY.
+func Key(src source.Source, id string) string {
+	switch src {
+	case source.YouTube:
+		return "yt:" + id
+	default:
+		return "sp:" + id
+	}
 }
 
 // SQLiteCache stores cache state in SQLite via sqlc-generated queries,
@@ -47,6 +58,9 @@ func NewSQLiteCache(ctx context.Context, sqlDB *sql.DB, cacheDir string, maxCach
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir cache: %w", err)
 	}
+	if err := migrateRenameSpotifyID(ctx, sqlDB); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	if _, err := sqlDB.ExecContext(ctx, schemaSQL); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
@@ -58,8 +72,57 @@ func NewSQLiteCache(ctx context.Context, sqlDB *sql.DB, cacheDir string, maxCach
 	}, nil
 }
 
-func (c *SQLiteCache) Lookup(ctx context.Context, spotifyID string) (Entry, bool, error) {
-	row, err := c.queries.GetTrack(ctx, spotifyID)
+// migrateRenameSpotifyID is idempotent: if the legacy spotify_id column
+// exists, rename it to track_key and prefix existing rows with "sp:".
+// On a fresh DB or already-migrated DB it is a no-op.
+func migrateRenameSpotifyID(ctx context.Context, sqlDB *sql.DB) error {
+	rows, err := sqlDB.QueryContext(ctx, "PRAGMA table_info(tracks)")
+	if err != nil {
+		return fmt.Errorf("pragma: %w", err)
+	}
+	defer rows.Close()
+	hasLegacy := false
+	for rows.Next() {
+		var (
+			cid         int
+			name, typ   string
+			notNull, pk int
+			dfltValue   sql.NullString
+		)
+		if scanErr := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); scanErr != nil {
+			return fmt.Errorf("scan pragma: %w", scanErr)
+		}
+		if name == "spotify_id" {
+			hasLegacy = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("pragma iter: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !hasLegacy {
+		return nil
+	}
+	tx, err := sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // best-effort on error path
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE tracks RENAME COLUMN spotify_id TO track_key`); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tracks SET track_key = 'sp:' || track_key WHERE track_key NOT LIKE 'sp:%' AND track_key NOT LIKE 'yt:%'`,
+	); err != nil {
+		return fmt.Errorf("prefix update: %w", err)
+	}
+	return tx.Commit()
+}
+
+func (c *SQLiteCache) Lookup(ctx context.Context, trackKey string) (Entry, bool, error) {
+	row, err := c.queries.GetTrack(ctx, trackKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, false, nil
 	}
@@ -77,16 +140,16 @@ func (c *SQLiteCache) Lookup(ctx context.Context, spotifyID string) (Entry, bool
 		} else {
 			// File gone — clear the column so future lookups don't lie.
 			//nolint:errcheck // best-effort cleanup; next Save/Lookup will retry
-			c.queries.ClearLocalPath(ctx, spotifyID)
+			c.queries.ClearLocalPath(ctx, trackKey)
 		}
 	}
 	return e, true, nil
 }
 
-func (c *SQLiteCache) Save(ctx context.Context, spotifyID string, e Entry, artist, title, album string, durationMs int) error {
+func (c *SQLiteCache) Save(ctx context.Context, trackKey string, e Entry, artist, title, album string, durationMs int) error {
 	now := time.Now().Unix()
 	params := db.UpsertTrackParams{
-		SpotifyID:  spotifyID,
+		TrackKey:   trackKey,
 		Artist:     artist,
 		Title:      title,
 		Album:      album,
@@ -102,10 +165,10 @@ func (c *SQLiteCache) Save(ctx context.Context, spotifyID string, e Entry, artis
 	return c.maybeEvict(ctx)
 }
 
-func (c *SQLiteCache) Touch(ctx context.Context, spotifyID string) error {
+func (c *SQLiteCache) Touch(ctx context.Context, trackKey string) error {
 	return c.queries.TouchLastUsed(ctx, db.TouchLastUsedParams{
 		LastUsedAt: time.Now().Unix(),
-		SpotifyID:  spotifyID,
+		TrackKey:   trackKey,
 	})
 }
 
@@ -132,7 +195,7 @@ func (c *SQLiteCache) maybeEvict(ctx context.Context) error {
 			}
 			//nolint:errcheck // best-effort delete; DB clear below is the authoritative state change
 			os.Remove(cand.LocalPath.String)
-			if clearErr := c.queries.ClearLocalPath(ctx, cand.SpotifyID); clearErr != nil {
+			if clearErr := c.queries.ClearLocalPath(ctx, cand.TrackKey); clearErr != nil {
 				return fmt.Errorf("clear: %w", clearErr)
 			}
 		}

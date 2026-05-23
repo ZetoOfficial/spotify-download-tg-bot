@@ -9,7 +9,7 @@ import (
 )
 
 type Track struct {
-	SpotifyID  string
+	TrackKey   string
 	Artist     string
 	Title      string
 	Album      string

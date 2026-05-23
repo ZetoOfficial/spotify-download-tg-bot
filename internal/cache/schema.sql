@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS tracks (
-  spotify_id   TEXT PRIMARY KEY,
+  track_key    TEXT PRIMARY KEY,  -- 'sp:<spotify_id>' | 'yt:<youtube_video_id>'
   artist       TEXT NOT NULL,
   title        TEXT NOT NULL,
   album        TEXT NOT NULL DEFAULT '',

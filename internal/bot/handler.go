@@ -90,7 +90,7 @@ func Handler(d Deps) bot.HandlerFunc {
 		if strings.HasPrefix(text, "/start") {
 			if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID:          chatID,
-				Text:            "Пришли ссылку на трек Spotify — отвечу mp3.",
+				Text:            "Пришли ссылку на трек Spotify или видео YouTube (до 5 минут) — отвечу mp3.",
 				ReplyParameters: replyTo,
 			}); err != nil {
 				d.Logger.Warn("send /start reply", "chat_id", chatID, "err", err)
@@ -105,11 +105,11 @@ func Handler(d Deps) bot.HandlerFunc {
 			}
 		}
 
-		id, err := ExtractSpotifyTrackID(text)
+		link, err := ParseLink(text)
 		if err != nil {
 			if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID:          chatID,
-				Text:            "пришли ссылку на трек Spotify",
+				Text:            "пришли ссылку на трек Spotify или YouTube",
 				ReplyParameters: replyTo,
 			}); sendErr != nil {
 				d.Logger.Warn("send parse-error reply", "chat_id", chatID, "err", sendErr)
@@ -141,8 +141,9 @@ func Handler(d Deps) bot.HandlerFunc {
 		ok := d.Queue.Enqueue(queue.Job{
 			ChatID:            chatID,
 			UserID:            userID,
-			SpotifyURL:        text,
-			SpotifyID:         id,
+			Source:            link.Source,
+			SourceID:          link.ID,
+			SourceURL:         link.URL,
 			ReplyMessageID:    replyID,
 			OriginalMessageID: originalMsgID,
 		})

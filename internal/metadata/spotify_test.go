@@ -37,8 +37,8 @@ func TestResolve_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if tr.SpotifyID != "abc123" {
-		t.Errorf("id %q", tr.SpotifyID)
+	if tr.SourceID != "abc123" {
+		t.Errorf("id %q", tr.SourceID)
 	}
 	if tr.Title != "Song Title" {
 		t.Errorf("title %q", tr.Title)

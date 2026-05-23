@@ -3,16 +3,19 @@ package queue
 import (
 	"context"
 	"sync"
+
+	"github.com/ZetoOfficial/spotify-download-tg-bot/internal/source"
 )
 
 // Job is the unit of work dispatched from the bot handler.
 type Job struct {
 	ChatID            int64
 	UserID            int64
-	SpotifyURL        string
-	SpotifyID         string
-	ReplyMessageID    int // bot's "⏳ качаю…" message, edited/deleted by Notifier
-	OriginalMessageID int // user's message, used for reply_to on audio + errors
+	Source            source.Source
+	SourceID          string // spotify track id or youtube video id
+	SourceURL         string // canonical URL (used by YouTube resolver; for logs in Spotify)
+	ReplyMessageID    int    // bot's "⏳ качаю…" message, edited/deleted by Notifier
+	OriginalMessageID int    // user's message, used for reply_to on audio + errors
 }
 
 // Handler processes a Job. It must respect ctx cancellation.
