@@ -5,6 +5,10 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  schedule:
+    # Weekly rebuild to pick up a fresh yt-dlp even without commits.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -35,7 +39,7 @@ jobs:
 
   build-and-push:
     needs: [test, lint]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -61,6 +65,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            YTDLP_CACHEBUST=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
